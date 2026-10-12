@@ -13,6 +13,7 @@ from .jwxt_auth import (
     status,
 )
 from .jwxt_classroom import filter_free_rooms, query_empty_classrooms
+from .export import DEFAULT_START, export_ics
 from .jwxt_client import JWXTClient, JWXTError, default_credentials_path
 from .jwxt_evaluation import evaluate, evaluations
 from .jwxt_exams import exams
@@ -42,6 +43,19 @@ def _action_grades(client, command):
 
 def _action_schedule(client, command):
     return schedule(client, command["semester"], command["week"], command["mode"])
+
+
+def _action_export(client, command):
+    return export_ics(
+        client,
+        command["semester"],
+        command["week"],
+        command["mode"],
+        command["output"] or "qfnu.ics",
+        command["semester_start"] or DEFAULT_START,
+        command["season"] or "winter",
+        command["name"],
+    )
 
 
 # 教室课表的空闲开关：选项名与结果字段名一一对应，同时给多个时由过滤层取交集。
@@ -126,6 +140,17 @@ JWXT_COMMANDS = (
     {"name": "status", "summary": "登录状态与个人资料", "kind": "action", "run": _action_status},
     {"name": "grades", "summary": "查询成绩", "kind": "action", "run": _action_grades},
     {"name": "schedule", "summary": "查询课表", "kind": "action", "run": _action_schedule},
+    {
+        "name": "export",
+        "summary": "把课表导出为 ICS 日历文件（只读）",
+        "kind": "action",
+        "run": _action_export,
+        "extra": (
+            "--out <路径>（默认 qfnu.ics）",
+            "--semester-start <YYYY-MM-DD>（默认 " + DEFAULT_START + "）",
+            "--season winter|summer（默认 winter；summer 为五一至十一期间）",
+        ),
+    },
     {"name": "classrooms", "summary": "查询不上课教室", "kind": "action", "run": _action_classrooms},
     {"name": "exams", "summary": "查询考试安排", "kind": "action", "run": _action_exams},
     {"name": "program", "summary": "查询培养方案与完成情况", "kind": "action", "run": _action_program},
@@ -215,6 +240,9 @@ def parse_jwxt_command(action, args):
         "period_start": "",
         "period_end": "",
         "xqlb": "",
+        "semester_start": "",
+        "season": "",
+        "name": "",
         "score": 89,
         "courses": [],
         "confirm": False,
@@ -285,6 +313,15 @@ def set_value_option(command, arg, value):
         command["mode"] = value
     elif arg == "--xqlb" or arg == "--term-category":
         command["xqlb"] = value
+    # ICS 导出的学期起始日、季节与日历名。
+    elif arg == "--semester-start":
+        command["semester_start"] = value
+    elif arg == "--season":
+        if value not in ("winter", "summer"):
+            raise ValueError("--season must be winter or summer")
+        command["season"] = value
+    elif arg == "--name":
+        command["name"] = value
     # 教室课表的周次范围、星期与大节范围：这里只把取值收进命令，校验留给 classrooms 动作。
     elif arg == "--week-end":
         command["week_end"] = value

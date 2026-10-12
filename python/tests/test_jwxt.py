@@ -1291,3 +1291,54 @@ class JWXTStatusWeekTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ===== QFNU 强智课表：隐藏层（教师/精确节次）与同格多课拆分 =====
+
+QFNU_CELL_TABLE = """
+<table id="kbtable">
+<tr><th>节次</th><th>星期一</th><th>星期二</th></tr>
+<tr>
+  <td>第3~5节&nbsp;</td>
+  <td>
+    <div id="AA-1-1" class="kbcontent1">C语言程序设计<br/><font title='周次(节次)'>1-18(周)</font><br/><font title='教室'>数学楼506、508</font><br/>----------------------<br/>C语言程序设计<br/><font title='周次(节次)'>1-16(周)</font><br/><font title='教室'>数学楼101</font><br/></div>
+    <div id="AA-1-2" style="display: none;" class="kbcontent">C语言程序设计<br/><font title='老师'>陈仁栋</font><br/><font title='周次(节次)'>1-18(周)[05节]</font><br/><font title='教室'>数学楼506、508</font><br/>---------------------<br/>C语言程序设计<br/><font title='老师'>陈仁栋</font><br/><font title='周次(节次)'>1-16(周)[03-04节]</font><br/><font title='教室'>数学楼101</font><br/></div>
+  </td>
+  <td>&nbsp;</td>
+</tr>
+</table>
+"""
+
+
+class QFNUScheduleDetailTest(unittest.TestCase):
+    """一个格子里两门课必须拆成两条，且各自的教师/节次/教室不能串。"""
+
+    def test_splits_multi_course_cell(self):
+        _rows, items = parse_schedule(QFNU_CELL_TABLE)
+        self.assertEqual(len(items), 2)
+        first, second = items
+        self.assertEqual(first["course_name"], "C语言程序设计")
+        self.assertEqual(second["course_name"], "C语言程序设计")
+        # 第一条是 1-18 周、第 5 节、506/508
+        self.assertEqual(first["weeks"], list(range(1, 19)))
+        self.assertEqual(first["sections"], [5])
+        self.assertEqual(first["room"], "数学楼506、508")
+        # 第二条是 1-16 周、3-4 节、101
+        self.assertEqual(second["weeks"], list(range(1, 17)))
+        self.assertEqual(second["sections"], [3, 4])
+        self.assertEqual(second["room"], "数学楼101")
+        # 教师来自隐藏层
+        self.assertEqual(first["teacher"], "陈仁栋")
+        self.assertEqual(second["teacher"], "陈仁栋")
+
+    def test_period_has_no_html_entity(self):
+        _rows, items = parse_schedule(QFNU_CELL_TABLE)
+        for item in items:
+            self.assertNotIn("&nbsp;", item["period"])
+            self.assertNotIn("\xa0", item["period"])
+        self.assertEqual(items[0]["period"], "第3~5节")
+
+    def test_weeks_are_integers(self):
+        _rows, items = parse_schedule(QFNU_CELL_TABLE)
+        for item in items:
+            self.assertTrue(all(isinstance(week, int) for week in item["weeks"]))

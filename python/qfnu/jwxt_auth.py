@@ -214,17 +214,58 @@ def init_session(client):
         raise OSError("session init HTTP " + str(status))
 
 
+# 上游 verifycode.servlet 返回的是 JPEG，但默认输出名历史上用的是 .png。
+# 按真实字节纠正后缀，避免下游"扩展名与内容不符"打不开。
+IMAGE_MAGIC = (
+    (b"\xff\xd8\xff", ".jpg"),
+    (b"\x89PNG\r\n\x1a\n", ".png"),
+    (b"GIF87a", ".gif"),
+    (b"GIF89a", ".gif"),
+    (b"RIFF", ".webp"),
+)
+
+
+def detect_image_extension(data):
+    """按魔数返回图片扩展名；识别不出返回空字符串。"""
+    for magic, suffix in IMAGE_MAGIC:
+        if data.startswith(magic):
+            if suffix == ".webp" and data[8:12] != b"WEBP":
+                continue
+            return suffix
+    return ""
+
+
+def align_image_extension(path, data):
+    """把路径后缀改成与真实图片格式一致，返回最终路径。
+
+    只纠正"内容与后缀不符"的情况；用户显式给了正确后缀时保持原样。
+    """
+    actual = detect_image_extension(data)
+    if not actual:
+        return path
+    current = os.path.splitext(path)[1].lower()
+    if current == actual:
+        return path
+    # .jpeg 与 .jpg 视为同一种
+    if actual == ".jpg" and current in (".jpg", ".jpeg"):
+        return path
+    aligned = os.path.splitext(path)[0] + actual
+    return aligned
+
+
 def captcha(client, output):
     client.reset_jar()
     init_session(client)
     image = fetch_captcha(client)
     path = os.path.abspath(output)
+    path = align_image_extension(path, image)
     write_private_file(path, image, "wb")
     client.persist({"captcha_pending": True})
     return success(
         "jwxt",
         {
             "captcha_image_path": path,
+            "image_extension": detect_image_extension(image),
             "session_path": client.session_path,
             "next": "easy-qfnu jwxt login --username <学号> --password <密码> --captcha <识图结果>",
             "hint": "请用模型或用户读取验证码；验证码错误时重新运行 jwxt captcha",
